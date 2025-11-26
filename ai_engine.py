@@ -11,21 +11,53 @@ class AIForteEngine:
         self.news = NewsScanner()
 
     async def analyze(self, candles, asset):
+
+        # ==========================
+        # 1️⃣ PROTEÇÃO CONTRA ERRO
+        # ==========================
+        if not candles or len(candles) < 2:
+            return {
+                "asset": asset,
+                "direction": "NO_SIGNAL",
+                "entry": 0,
+                "tp1": 0,
+                "tp2": 0,
+                "tp3": 0,
+                "sl": 0,
+                "confidence": 0,
+                "reasons": ["Sem dados suficientes de candles."],
+            }
+
+        # Último candle
         last = candles[-1]
 
-        # PRICE ACTION
+        # ==========================
+        # 2️⃣ PRICE ACTION
+        # ==========================
         pa_signal = self.pa.detect_patterns(candles)
 
-        # INDICADORES
+        # ==========================
+        # 3️⃣ INDICADORES TÉCNICOS
+        # ==========================
         ema9 = self.ind.ema(candles, 9)
         ema20 = self.ind.ema(candles, 20)
         rsi = self.ind.rsi(candles)
-        volume = last["volume"]
 
-        # NOTÍCIAS
-        news_impact = await self.news.check(asset)
+        # Volume pode não existir em alguns feeds
+        volume = last.get("volume", 0)
+        avg_volume = self.ind.avg_volume(candles)
 
-        # IA FORTE — CONFLUÊNCIAS
+        # ==========================
+        # 4️⃣ NOTÍCIAS
+        # ==========================
+        try:
+            news_impact = await self.news.check(asset)
+        except:
+            news_impact = "neutral"
+
+        # ==========================
+        # 5️⃣ CONFLUÊNCIAS DE IA FORTE
+        # ==========================
         confluencias = 0
         motivos = []
 
@@ -49,28 +81,52 @@ class AIForteEngine:
             confluencias += 1
             motivos.append("RSI sobrecomprado")
 
-        if volume > (self.ind.avg_volume(candles) * 1.4):
+        if avg_volume > 0 and volume > avg_volume * 1.4:
             confluencias += 1
-            motivos.append("Volume forte no candle")
+            motivos.append("Volume acima da média")
 
         if news_impact == "bullish":
             confluencias += 1
-            motivos.append("Notícia favorece BUY")
+            motivos.append("Notícias favorecem BUY")
 
         if news_impact == "bearish":
             confluencias += 1
-            motivos.append("Notícia favorece SELL")
+            motivos.append("Notícias favorecem SELL")
 
-        # IA Decide
+        # ==========================
+        # 6️⃣ SE NÃO TEM SINAL FORTE
+        # ==========================
         if confluencias < 2:
-            return None
+            return {
+                "asset": asset,
+                "direction": "NO_SIGNAL",
+                "entry": last["close"],
+                "tp1": 0,
+                "tp2": 0,
+                "tp3": 0,
+                "sl": 0,
+                "confidence": 10,
+                "reasons": motivos,
+            }
 
+        # ==========================
+        # 7️⃣ DEFINIÇÃO DE DIREÇÃO
+        # ==========================
         direction = "BUY" if ema9 > ema20 else "SELL"
 
+        # ==========================
+        # 8️⃣ CÁLCULO DE TARGETS E STOP
+        # ==========================
         sl, tp1, tp2, tp3 = self.ind.calculate_levels(candles, direction)
 
+        # ==========================
+        # 9️⃣ PESO TOTAL DA IA
+        # ==========================
         confidence = min(95, confluencias * 18)
 
+        # ==========================
+        # 🔟 RETORNO FINAL (MODELO)
+        # ==========================
         return Signal(
             asset=asset,
             direction=direction,
