@@ -1,16 +1,12 @@
-class Candle:
-    def __init__(self, open, high, low, close, volume):
-        self.open = open
-        self.high = high
-        self.low = low
-        self.close = close
-        self.volume = volume
+from pydantic import BaseModel
+from typing import List
 
-    def to_dict(self):
-        return {
-            "open": self.open,
-            "high": self.high,
-            "low": self.low,
-            "close": self.close,
-            "volume": self.volume
-        }
+class Candle(BaseModel):
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+class CandleList(BaseModel):
+    candles: List[Candle]
