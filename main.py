@@ -15,24 +15,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/")
-async def root():
-    return {"status": "Servidor IA M5 ativo!"}
-
 @app.get("/generate_signal/{asset}")
 async def generate_signal(asset: str):
     try:
-        # 🔵 Agora a IA só lê M5
-        candles_m5 = await binance.get_candles(asset, interval="5m", limit=80)
+        candles = await binance.get_candles(asset, interval="5m", limit=80)
 
-        if not candles_m5:
-            return {"status": "SEM SINAL", "motivo": "Falha ao puxar velas M5"}
+        if not candles:
+            return {"status": "SEM SINAL", "motivo": "Erro ao puxar velas"}
 
-        # 🔵 Envia SOMENTE M5 para a IA
-        signal = await engine.analyze(candles_m5, asset)
-
-        if signal is None:
-            return {"status": "SEM SINAL", "motivo": "Pouca confluência M5"}
+        # IA turbo — SEMPRE GERA SINAL
+        signal = await engine.analyze(candles, asset)
 
         return {
             "asset": signal.asset,
