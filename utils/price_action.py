@@ -1,47 +1,55 @@
-class PriceAction:
+from typing import List, Dict, Optional
 
-    def detect_patterns(self, candles):
-        """
-        Detecta padrões básicos de price action.
-        """
+def detect_hammer(candle: Dict) -> bool:
+    """Detecta padrão Hammer/Martelete"""
+    body_size = abs(candle['close'] - candle['open'])
+    lower_wick = min(candle['open'], candle['close']) - candle['low']
+    upper_wick = candle['high'] - max(candle['open'], candle['close'])
+    
+    # Martelete: pequeno corpo, sombra inferior longa
+    if body_size > 0 and lower_wick > (2 * body_size) and upper_wick < body_size:
+        return True
+    return False
 
-        if len(candles) < 3:
-            return None
+def detect_engulfing(current: Dict, previous: Dict) -> Optional[str]:
+    """Detecta padrão Engulfing"""
+    current_body = abs(current['close'] - current['open'])
+    previous_body = abs(previous['close'] - previous['open'])
+    
+    # Bullish Engulfing
+    if (current['close'] > current['open'] and  # Candle atual verde
+        previous['close'] < previous['open'] and  # Candle anterior vermelho
+        current['open'] < previous['close'] and   # Abertura atual < fechamento anterior
+        current['close'] > previous['open']):     # Fechamento atual > abertura anterior
+        return "BULLISH_ENGULFING"
+    
+    # Bearish Engulfing  
+    elif (current['close'] < current['open'] and
+          previous['close'] > previous['open'] and
+          current['open'] > previous['close'] and
+          current['close'] < previous['open']):
+        return "BEARISH_ENGULFING"
+    
+    return None
 
-        last = candles[-1]
-        prev = candles[-2]
-
-        body_last = abs(last["close"] - last["open"])
-        body_prev = abs(prev["close"] - prev["open"])
-
-        # ENGOLFO DE ALTA
-        if (last["close"] > last["open"] and
-            prev["close"] < prev["open"] and
-            last["close"] > prev["open"] and
-            last["open"] < prev["close"]):
-            return "Engolfo de Alta"
-
-        # ENGOLFO DE BAIXA
-        if (last["close"] < last["open"] and
-            prev["close"] > prev["open"] and
-            last["open"] > prev["close"] and
-            last["close"] < prev["open"]):
-            return "Engolfo de Baixa"
-
-        # DOJI
-        if body_last < (last["high"] - last["low"]) * 0.10:
-            return "Doji (Indecisão)"
-
-        # PIN BAR (Martelo)
-        if (last["close"] > last["open"] and
-            (last["low"] < prev["low"]) and
-            (last["close"] - last["open"]) < (last["high"] - last["low"]) * 0.3):
-            return "Pin Bar (Martelo Bullish)"
-
-        # PIN BAR DE VENDA
-        if (last["close"] < last["open"] and
-            (last["high"] > prev["high"]) and
-            (last["open"] - last["close"]) < (last["high"] - last["low"]) * 0.3):
-            return "Pin Bar (Martelo Bearish)"
-
-        return None
+def analyze_price_action(candles: List[Dict]) -> List[str]:
+    """Analisa price action nos últimos candles"""
+    patterns = []
+    
+    if len(candles) < 2:
+        return patterns
+    
+    # Último candle
+    current = candles[-1]
+    
+    # Verificar martelete
+    if detect_hammer(current):
+        patterns.append("Martelete")
+    
+    # Verificar engulfing
+    if len(candles) >= 2:
+        engulfing = detect_engulfing(current, candles[-2])
+        if engulfing:
+            patterns.append("Engulfing")
+    
+    return patterns
