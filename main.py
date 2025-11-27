@@ -1,62 +1,59 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from market_feeds.binance_ws import BinanceFeed
-from market_feeds.oanda_api import OandaMockFeed
-from ai_engine import AIEngine
-from models.signal_model import Signal, NoSignal
-import asyncio
+from market_feeds.binance_api import BinanceFeed
+from ai_engine import AIForteEngine
 
-app = FastAPI(title="SAORY AI Engine", version="1.0.0")
+app = FastAPI()
+engine = AIForteEngine()
+binance = BinanceFeed()
 
-# Permitir CORS para o app iPhone
+# Permitir acesso do Kivy, iOS, Android, navegador etc
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Inicializar feeds e IA
-binance_feed = BinanceFeed()
-oanda_feed = OandaMockFeed()
-ai_engine = AIEngine()
 
 @app.get("/")
 async def root():
     return {"status": "Servidor IA Forte ativo!"}
 
+# -----------------------------------------------------
+# NOVO ENDPOINT M1+M5
+# -----------------------------------------------------
 @app.get("/generate_signal/{asset}")
 async def generate_signal(asset: str):
-    """Gera sinal para um ativo específico"""
-    
-    try:
-        candles = None
-        
-        # Buscar dados baseado no ativo
-        if asset in ["BTCUSDT", "ETHUSDT"]:
-            candles = await binance_feed.get_klines(asset)
-        elif asset == "XAUUSD":
-            candles = oanda_feed.get_gold_data()
-        elif asset == "USOIL":
-            candles = oanda_feed.get_oil_data()
-        else:
-            return NoSignal(motivo="Ativo não suportado")
-        
-        if not candles:
-            return NoSignal(motivo="Dados não disponíveis")
-        
-        # Gerar sinal com IA
-        signal = ai_engine.analyze_candles(candles, asset)
-        
-        if signal:
-            return signal
-        else:
-            return NoSignal(motivo="Pouca confluência")
-            
-    except Exception as e:
-        return HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
 
-# Rodar servidor
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=10000)
+    try:
+        # ----- Puxa velas M1 -----
+        candles_m1 = await binance.get_candles(asset, interval="1m", limit=80)
+
+        # ----- Puxa velas M5 -----
+        candles_m5 = await binance.get_candles(asset, interval="5m", limit=80)
+
+        if not candles_m1 or not candles_m5:
+            return {"status": "SEM SINAL", "motivo": "Falha ao puxar dados"}
+
+        # ----- IA Forte analisando -----
+        signal = await engine.analyze(candles_m1, candles_m5, asset)
+
+        if signal is None:
+            return {"status": "SEM SINAL", "motivo": "Pouca confluência"}
+
+        # ----- Retorno do sinal final -----
+        return {
+            "asset": signal.asset,
+            "direction": signal.direction,
+            "entry": signal.entry,
+            "tp1": signal.tp1,
+            "tp2": signal.tp2,
+            "tp3": signal.tp3,
+            "sl": signal.sl,
+            "confidence": signal.confidence,
+            "reasons": signal.reasons
+        }
+
+    except Exception as e:
+        return {"status": "SEM SINAL", "motivo": str(e)}
