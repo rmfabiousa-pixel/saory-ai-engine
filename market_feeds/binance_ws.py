@@ -1,19 +1,31 @@
 import aiohttp
-import json
 
 class BinanceFeed:
-    BASE_URL = "wss://stream.binance.com:9443/ws"
 
-    async def get_candles(self, symbol):
-        url = f"{self.BASE_URL}/{symbol.lower()}@kline_1m"
+    async def get_candles(self, asset, interval="1m", limit=50):
+        """
+        Puxa candles via REST API (funciona no Render).
+        """
+
+        symbol = asset.upper() + "USDT"
+        url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
+
         async with aiohttp.ClientSession() as session:
-            async with session.ws_connect(url) as ws:
-                msg = await ws.receive()
-                data = json.loads(msg.data)
-                candle = data["k"]
-                return {
-                    "open": float(candle["o"]),
-                    "high": float(candle["h"]),
-                    "low": float(candle["l"]),
-                    "close": float(candle["c"]),
-                }
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    raise Exception(f"Erro Binance REST: {resp.status}")
+
+                data = await resp.json()
+
+        candles = []
+        for c in data:
+            candles.append({
+                "open_time": c[0],
+                "open": float(c[1]),
+                "high": float(c[2]),
+                "low": float(c[3]),
+                "close": float(c[4]),
+                "volume": float(c[5])
+            })
+
+        return candles
