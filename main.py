@@ -7,7 +7,6 @@ app = FastAPI()
 engine = AIForteEngine()
 binance = BinanceFeed()
 
-# Permitir acesso do Kivy, iOS, Android, navegador etc
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,31 +17,23 @@ app.add_middleware(
 
 @app.get("/")
 async def root():
-    return {"status": "Servidor IA Forte ativo!"}
+    return {"status": "Servidor IA M5 ativo!"}
 
-# -----------------------------------------------------
-# NOVO ENDPOINT M1+M5
-# -----------------------------------------------------
 @app.get("/generate_signal/{asset}")
 async def generate_signal(asset: str):
-
     try:
-        # ----- Puxa velas M1 -----
-        candles_m1 = await binance.get_candles(asset, interval="1m", limit=80)
-
-        # ----- Puxa velas M5 -----
+        # 🔵 Agora a IA só lê M5
         candles_m5 = await binance.get_candles(asset, interval="5m", limit=80)
 
-        if not candles_m1 or not candles_m5:
-            return {"status": "SEM SINAL", "motivo": "Falha ao puxar dados"}
+        if not candles_m5:
+            return {"status": "SEM SINAL", "motivo": "Falha ao puxar velas M5"}
 
-        # ----- IA Forte analisando -----
-        signal = await engine.analyze(candles_m1, candles_m5, asset)
+        # 🔵 Envia SOMENTE M5 para a IA
+        signal = await engine.analyze(candles_m5, asset)
 
         if signal is None:
-            return {"status": "SEM SINAL", "motivo": "Pouca confluência"}
+            return {"status": "SEM SINAL", "motivo": "Pouca confluência M5"}
 
-        # ----- Retorno do sinal final -----
         return {
             "asset": signal.asset,
             "direction": signal.direction,
