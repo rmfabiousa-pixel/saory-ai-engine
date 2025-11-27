@@ -1,21 +1,21 @@
-class RiskManager:
-
-    def validate_signal(self, signal):
-        """
-        Avalia se um sinal gerado pela IA deve ser enviado ou bloqueado.
-        """
-
-        # Se confiança for menor que 40%, descartar
-        if signal.confidence < 40:
-            return False, "Confiança muito baixa"
-
-        # Evitar sinais sem amplitude (mercado parado)
-        if abs(signal.tp1 - signal.entry) < 0.0001:
-            return False, "Mercado sem volatilidade"
-
-        # Evitar SL muito distante (risco exagerado)
-        if abs(signal.entry - signal.sl) > abs(signal.tp1 - signal.entry) * 3:
-            return False, "Stop muito grande (risco alto)"
-
-        # Sinal aprovado
-        return True, "OK"
+def calculate_targets(entry: float, direction: str, volatility: float) -> dict:
+    """Calcula TP1, TP2, TP3 e SL baseado na volatilidade"""
+    risk_multiplier = volatility * 0.01  # Ajusta baseado na volatilidade
+    
+    if direction == "BUY":
+        tp1 = entry * (1 + risk_multiplier * 0.5)
+        tp2 = entry * (1 + risk_multiplier * 1.0)
+        tp3 = entry * (1 + risk_multiplier * 1.5)
+        sl = entry * (1 - risk_multiplier * 1.0)
+    else:  # SELL
+        tp1 = entry * (1 - risk_multiplier * 0.5)
+        tp2 = entry * (1 - risk_multiplier * 1.0)
+        tp3 = entry * (1 - risk_multiplier * 1.5)
+        sl = entry * (1 + risk_multiplier * 1.0)
+    
+    return {
+        "tp1": round(tp1, 2),
+        "tp2": round(tp2, 2),
+        "tp3": round(tp3, 2),
+        "sl": round(sl, 2)
+    }
