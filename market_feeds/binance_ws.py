@@ -1,47 +1,75 @@
-import aiohttp
+# market_feeds/binance_ws.py   ←←← SUBSTITUA TODO O SEU ARQUIVO ATUAL POR ESSE
+
 import asyncio
-from typing import List, Dict, Optional
+import json
+import aiohttp
+import logging
+from typing import List, Dict, Callable, Optional
+from collections import defaultdict
 
-class BinanceFeed:
-    def __init__(self):
-        self.base_urls = [
-            "https://api1.binance.com/api/v3",
-            "https://api.binance.com/api/v3", 
-            "https://api.binance.us/api/v3"
-        ]
-    
-    async def get_klines(self, symbol: str, interval: str = "5m", limit: int = 50) -> Optional[List[Dict]]:
-        """Pega candles do Binance com fallback"""
-        for base_url in self.base_urls:
-            try:
-                url = f"{base_url}/klines?symbol={symbol}&interval={interval}&limit={limit}"
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(url, timeout=10) as response:
-                        if response.status == 200:
-                            data = await response.json()
-                            
-                            candles = []
-                            for candle in data:
-                                candles.append({
-                                    "open": float(candle[1]),
-                                    "high": float(candle[2]),
-                                    "low": float(candle[3]),
-                                    "close": float(candle[4]),
-                                    "volume": float(candle[5])
-                                })
-                            return candles
-            except:
-                continue
-        return None
+class BinanceWebSocket:
+    def __init__(self, symbols: List[str], interval: str = "5m"):
+     self.symbols = [s.lower() for s in symbols]
+     self.interval = interval
+     self.base_url = "wss://stream.binance.com:9443/stream"
+     self.candles: Dict[str, List[Dict]] = defaultdict(list)
+     self.on_candle_close: Optional[Callable[[str, List[Dict]], None]] = None
 
-# Teste simples
-async def test_binance():
-    feed = BinanceFeed()
-    candles = await feed.get_klines("BTCUSDT")
-    if candles:
-        print(f"✓ Binance funcionando! Primeiro candle: {candles[0]}")
-    else:
-        print("✗ Binance falhou")
+     # Monta os streams tipo btcusdt@kline_5m
+     self.streams = [f"{s}@kline_{interval}" for s in self.symbols]
 
-if __name__ == "__main__":
-    asyncio.run(test_binance())
+ async def start(self):
+     """Loop eterno com reconexão automática"""
+     while True:
+         try:
+             url = f"{self.base_url}?streams={'/'.join(self.streams)}"
+             async with aiohttp.ClientSession() as session:
+                 async with session.ws_connect(url, heartbeat=30) as ws:
+                     logging.info(f"Binance WebSocket conectado → {len(self.symbols)} ativos")
+                     async for msg in ws:
+                         if msg.type == aiohttp.WSMsgType.TEXT:
+                             data = json.loads(msg.data)
+                             await self._handle_message(data)
+                         elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
+                             break
+         except Exception as e:
+             logging.error(f"WebSocket caiu: {e} → reconectando em 5 segundos...")
+             await asyncio.sleep(5)
+
+ async def _handle_message(self, data: dict):
+     if "stream" not in data or "data" not in data:
+         return
+
+     k = data["data"]["k"]
+     symbol = k["s"].lower()
+     is_closed = k["x"]  # True só quando a vela fecha de verdade
+
+     candle = {
+         "open":   float(k["o"]),
+         "high":   float(k["h"]),
+         "low":    float(k["l"]),
+         "close":  float(k["c"]),
+         "volume": float(k["v"]),
+         "is_closed": is_closed
+     }
+
+     # Se ainda não tem histórico ainda ou a vela mudou
+     if not self.candles[symbol] or self.candles[symbol][-1]["close"] != candle["close"]:
+         if is_closed:
+             # Vela acabou de fechar → adiciona nova vela completa
+             self.candles[symbol].append(candle)
+             if len(self.candles[symbol]) > 200:
+                 self.candles[symbol] = self.candles[symbol][-200:]
+
+             # AVISA O ENGINE (só quando fecha a vela!)
+             if self.on_candle_close:
+                 await self.on_candle_close(symbol.upper(), self.candles[symbol][-50:])
+
+         else:
+             # Vela ainda está se formando → só atualiza a última
+             if self.candles[symbol]:
+                 self.candles[symbol][-1] = candle
+
+ def get_latest_candles(self, symbol: str, limit: int = 50) -> List[Dict]:
+     """Pra você usar em backtest ou debug"""
+     return self.candles.get(symbol.lower(), [])[-limit:]
