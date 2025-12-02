@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -17,17 +18,36 @@ INTERVAL = "5m"  # 1m, 3m, 5m, 15m...
 
 engine = AIFortEngine()
 latest_signals = {}  # guarda o último sinal válido por ativo (pra API ler)
+last_updates = {}  # registra quando cada ativo teve a última vela fechada processada
+activity_log = []  # histórico recente de sinais para fins de visibilidade
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(message)s")
 
 async def on_candle_closed(symbol: str, candles: list):
     """Essa função roda AUTOMATICAMENTE toda vez que uma vela fecha"""
     try:
+        last_updates[symbol] = {
+            "last_closed_at": datetime.now(timezone.utc).isoformat(),
+            "candles_seen": len(candles),
+        }
+
         signal = await engine.analyze(candles, symbol)
         
         if signal and signal.confidence >= 75:  # só sinal forte!
             latest_signals[symbol] = signal.dict()
             logging.info(f"SINAL FORTE → {signal.direction} {symbol} | Conf: {signal.confidence}% | TP3: {signal.tp3}")
+
+            activity_log.append(
+                {
+                    "asset": symbol,
+                    "direction": signal.direction,
+                    "confidence": signal.confidence,
+                    "entry": signal.entry,
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+            if len(activity_log) > 50:
+                del activity_log[:-50]
             
             # AQUI VOCÊ COLOCA SEU ALERTA:
             # await send_telegram(f"BUY {symbol} @ {signal.entry}")
@@ -77,3 +97,14 @@ async def get_signal(asset: str):
 @app.get("/signals")
 async def get_all_signals():
     return latest_signals or {"status": "Nenhum sinal ativo no momento"}
+
+
+@app.get("/work")
+async def show_work():
+    """Expõe rapidamente como o bot está rodando e o que ele já produziu."""
+    return {
+        "ativos_monitorados": SYMBOLS,
+        "ultima_atividade": last_updates,
+        "sinais_ativos": latest_signals,
+        "historico_recente": activity_log,
+    }
