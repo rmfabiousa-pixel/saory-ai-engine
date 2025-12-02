@@ -6,7 +6,6 @@ import asyncio
 
 class AIFortEngine:
     def __init__(self):
-        self.ind = self
         self.ind = Indicators()
         self.pa = PriceAction()
         self.news = NewsScanner()
@@ -46,21 +45,28 @@ class AIFortEngine:
         # === 4. DECISÃO FINAL ===
         direction = None
         confidence = 50
+        reasons: list[str] = []
 
         # COMPRA
         if (bull_trend and macd_bull_cross and not rsi_overbought and last['close'] > last['open']):
             if rejection_wick == "bullish" or breakout == "up":
                 confidence += 25
+                reasons.append("Price action favorável (pavio de rejeição/rompimento)")
             if news_sentiment == "positive":
                 confidence += 15
+                reasons.append("Sentimento positivo nas notícias")
+            reasons.append("Tendência de alta com cruzamento MACD e RSI saudável")
             direction = "BUY"
 
         # VENDA
         elif (bear_trend and macd_bear_cross and not rsi_oversold and last['close'] < last['open']):
             if rejection_wick == "bearish" or breakout == "down":
                 confidence += 25
+                reasons.append("Price action favorável (pavio de rejeição/rompimento)")
             if news_sentiment == "negative":
                 confidence += 15
+                reasons.append("Sentimento negativo nas notícias")
+            reasons.append("Tendência de baixa com cruzamento MACD e RSI saudável")
             direction = "SELL"
 
         # Se tiver notícia de alto impacto vindo, não opera (evita stop por volatilidade)
@@ -80,7 +86,7 @@ class AIFortEngine:
                 tp2=tp2,
                 tp3=tp3,
                 confidence=confidence,
-                reason="EMA9/20 + MACD + PriceAction + NewsFilter"
+                reasons=reasons or ["EMA9/20 + MACD + PriceAction + NewsFilter"]
             )
 
         return  # sem sinal forte o suficiente
